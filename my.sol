@@ -1,132 +1,96 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-
-contract EduInsurance {
-    using SafeMath for uint256;
-
+contract EducationInsurancePolicy {
     address public owner;
-    uint256 public policyCount = 0;
-
-    uint256 public constant MIN_PREMIUM = 100000000000; // 0.0000001 ETH in Wei
-
-    // Define a structure for insurance policies
+    uint256 public premiumAmount;
+    uint256 public yieldRate; // Annual yield rate in percentage (e.g., 5 for 5%)
+    uint256 public policyDuration; // Duration in years
+    uint256 public startTimestamp;
+    uint256 public minimumPremium; // Minimum premium amount (0.01 ETH)
+    
     struct Policy {
-        uint256 policyId;
-        address policyholder;
-        uint256 premiumAmount;
-        uint256 investedAmount;
-        uint256 yieldGenerated;
-        uint256 payoutAmount;
-        uint256 milestone; // Milestone representing educational achievements
-        bool isActive; // Flag to check if the policy is still active
+        uint256 premiumPaid;
+        uint256 startTimestamp;
+        uint256 yieldEarned;
+        address beneficiary;
     }
-
-    mapping(uint256 => Policy) public policies;
-
-    event PolicyCreated(uint256 policyId, address indexed policyholder, uint256 premiumAmount);
-    event YieldGenerated(uint256 policyId, uint256 yieldAmount);
-    event PayoutIssued(uint256 policyId, uint256 payoutAmount);
-    event MilestoneUpdated(uint256 policyId, uint256 milestone);
-
-    constructor() {
-        owner = msg.sender;
-    }
-
+    
+    mapping(address => Policy) public policies;
+    
     modifier onlyOwner() {
         require(msg.sender == owner, "You are not authorized");
         _;
     }
+    
+    event PolicyCreated(address indexed policyHolder, uint256 premiumPaid, uint256 startTimestamp);
+    event YieldClaimed(address indexed policyHolder, uint256 yieldAmount);
+    event PremiumPaid(address indexed policyHolder, uint256 amount);
+    
+    constructor(uint256 _yieldRate, uint256 _policyDuration) {
+        owner = msg.sender;
+        yieldRate = _yieldRate;
+        policyDuration = _policyDuration;
+        minimumPremium = 0.01 ether; // Set the minimum premium to 0.01 ETH
+    }
 
-    modifier isPolicyActive(uint256 policyId) {
-        require(policies[policyId].isActive, "Policy is not active");
+    // Ensure the premium is at least 0.01 ETH
+    modifier validPremium(uint256 _premium) {
+        require(_premium >= minimumPremium, "Premium must be at least 0.01 ETH");
         _;
     }
 
-    // Function to create a new policy
-    function createPolicy() external payable {
-        require(msg.value >= MIN_PREMIUM, "Premium must be at least 0.0000001 ETH");
-
-        policyCount++;
-        policies[policyCount] = Policy({
-            policyId: policyCount,
-            policyholder: msg.sender,
-            premiumAmount: msg.value,
-            investedAmount: msg.value, // Initial investment is the premium
-            yieldGenerated: 0,
-            payoutAmount: 0,
-            milestone: 0, // Milestone starts at 0, can be updated later
-            isActive: true
+    function createPolicy(address beneficiary) external payable validPremium(msg.value) {
+        require(policies[msg.sender].premiumPaid == 0, "Policy already exists");
+        
+        policies[msg.sender] = Policy({
+            premiumPaid: msg.value,
+            startTimestamp: block.timestamp,
+            yieldEarned: 0,
+            beneficiary: beneficiary
         });
 
-        emit PolicyCreated(policyCount, msg.sender, msg.value);
+        emit PolicyCreated(msg.sender, msg.value, block.timestamp);
     }
 
-    // Simulate the yield generation
-    function generateYield(uint256 policyId, uint256 yieldAmount) external onlyOwner isPolicyActive(policyId) {
-        require(yieldAmount > 0, "Yield amount must be greater than zero");
-
-        Policy storage policy = policies[policyId];
-        policy.yieldGenerated = policy.yieldGenerated.add(yieldAmount);
-        policy.investedAmount = policy.investedAmount.add(yieldAmount);
-
-        emit YieldGenerated(policyId, yieldAmount);
+    function calculateYield(address policyHolder) public view returns (uint256) {
+        Policy storage policy = policies[policyHolder];
+        require(policy.premiumPaid > 0, "Policy does not exist");
+        
+        uint256 timeElapsed = block.timestamp - policy.startTimestamp;
+        uint256 yearsElapsed = timeElapsed / 365 days;
+        
+        if (yearsElapsed >= policyDuration) {
+            uint256 yield = (policy.premiumPaid * yieldRate * yearsElapsed) / 100;
+            return yield;
+        }
+        return 0;
     }
 
-    // Function to trigger payout when a milestone is reached
-    function issuePayout(uint256 policyId) external onlyOwner isPolicyActive(policyId) {
-        Policy storage policy = policies[policyId];
-
-        uint256 payout = policy.investedAmount.add(policy.yieldGenerated);
-        policy.payoutAmount = payout;
-
-        // Transfer payout to the policyholder
-        require(address(this).balance >= payout, "Insufficient contract balance for payout");
-        payable(policy.policyholder).transfer(payout);
-
-        // Deactivate the policy after payout
-        policy.isActive = false;
-
-        emit PayoutIssued(policyId, payout);
+    function claimYield() external {
+        Policy storage policy = policies[msg.sender];
+        require(policy.premiumPaid > 0, "Policy does not exist");
+        
+        uint256 yieldAmount = calculateYield(msg.sender);
+        require(yieldAmount > 0, "Yield not available yet");
+        
+        policy.yieldEarned += yieldAmount;
+        payable(policy.beneficiary).transfer(yieldAmount);
+        
+        emit YieldClaimed(msg.sender, yieldAmount);
     }
 
-    // Function to update the milestone (e.g., when the child reaches a certain educational level)
-    function updateMilestone(uint256 policyId, uint256 milestone) external onlyOwner isPolicyActive(policyId) {
-        Policy storage policy = policies[policyId];
-        policy.milestone = milestone;
-
-        emit MilestoneUpdated(policyId, milestone);
+    function payPremium() external payable validPremium(msg.value) {
+        policies[msg.sender].premiumPaid += msg.value;
+        
+        emit PremiumPaid(msg.sender, msg.value);
     }
 
-    // Function to view policy details
-    function getPolicyDetails(uint256 policyId) external view returns (
-        address policyholder,
-        uint256 premiumAmount,
-        uint256 investedAmount,
-        uint256 yieldGenerated,
-        uint256 payoutAmount,
-        uint256 milestone,
-        bool isActive
-    ) {
-        Policy storage policy = policies[policyId];
-        return (
-            policy.policyholder,
-            policy.premiumAmount,
-            policy.investedAmount,
-            policy.yieldGenerated,
-            policy.payoutAmount,
-            policy.milestone,
-            policy.isActive
-        );
+    function getPolicyDetails(address policyHolder) external view returns (uint256, uint256, uint256, address) {
+        Policy storage policy = policies[policyHolder];
+        return (policy.premiumPaid, policy.yieldEarned, policy.startTimestamp, policy.beneficiary);
     }
-
-    // Function to withdraw contract balance (only for the owner)
-    function withdrawFunds(uint256 amount) external onlyOwner {
-        require(amount <= address(this).balance, "Insufficient balance");
-        payable(owner).transfer(amount);
-    }
-
-    // Fallback function to accept ETH
-    receive() external payable {}
 }
+
+
+
