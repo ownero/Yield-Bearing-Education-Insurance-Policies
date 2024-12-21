@@ -10,6 +10,8 @@ The smart contract manages all aspects of the insurance policy, including creati
 
 ## Contract Address
 0xc49726B8804265f4b901a322087F08261d132385
+<img width="832" alt="image" src="https://github.com/user-attachments/assets/5513b55c-bf58-4b84-ad7f-9c1c8302b96b" />
+
 
 ## Project Vision
 The vision of **Yield-Bearing Education Insurance Policies** is to transform the education savings and insurance industry by offering a decentralized and automated solution for families to secure their children's education funds. We aim to provide a transparent, efficient, and cost-effective platform where users can benefit from yield-generating investments, milestone tracking, and guaranteed payouts.
